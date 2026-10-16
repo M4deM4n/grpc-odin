@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package helloworld;
+
+// The greeting service.
+service Greeter {
+  // A unary RPC.
+  rpc SayHello (HelloRequest) returns (HelloReply);
+  // A server-streaming RPC: one greeting per language.
+  rpc SayHelloAll (HelloRequest) returns (stream HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}

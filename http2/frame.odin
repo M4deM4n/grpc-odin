@@ -130,17 +130,19 @@ parse_headers :: proc "contextless" (h: Frame_Header, payload: []u8) -> (f: Head
 	if has_problem(problem) {
 		return
 	}
+	f.end_stream = h.flags & FLAG_END_STREAM != 0
+	f.end_headers = h.flags & FLAG_END_HEADERS != 0
 	if has_priority {
 		f.has_priority = true
 		f.priority = decode_priority(content)
-		if f.priority.dependency == h.stream_id {
-			return f, stream_error(.Protocol_Error, "stream depends on itself")
-		}
 		content = content[5:]
 	}
+	// The fragment is set even for stream errors: the receiver must still
+	// decode it to keep its HPACK context synchronised.
 	f.fragment = content
-	f.end_stream = h.flags & FLAG_END_STREAM != 0
-	f.end_headers = h.flags & FLAG_END_HEADERS != 0
+	if has_priority && f.priority.dependency == h.stream_id {
+		return f, stream_error(.Protocol_Error, "stream depends on itself")
+	}
 	return f, {}
 }
 

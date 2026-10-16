@@ -30,6 +30,13 @@ if [ -d tests/grpc/proto ]; then
 	"build/odin-protoc$EXE" -I tests/grpc/proto -o tests/grpc/gen --package=testsvc tests/grpc/proto/test_service.proto
 fi
 
+echo "==> building examples"
+"build/odin-protoc$EXE" -I examples/helloworld -o examples/helloworld/pb --package=helloworld_pb examples/helloworld/helloworld.proto
+for ex in examples/*/server examples/*/client; do
+	[ -d "$ex" ] || continue
+	odin build "$ex" $COMMON -out:"build/$(echo "$ex" | tr '/' '_')$EXE"
+done
+
 SUITES=${1:-$(ls tests)}
 for suite in $SUITES; do
 	[ -d "tests/$suite" ] || continue

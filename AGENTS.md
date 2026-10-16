@@ -50,6 +50,7 @@ Generated code imports the runtime through the `grpc` collection
 sh scripts/test.sh              # build odin-protoc, regenerate test code, run all suites
 sh scripts/test.sh protobuf     # one suite (directory name under tests/)
 ODIN_FLAGS="-sanitize:address" sh scripts/test.sh   # extra flags for odin test
+sh scripts/interop.sh           # cross-tests against gRPC C-core (see grpc-interop skill)
 odin check <pkg> -no-entry-point -vet -strict-style   # fast type check of a library package
 ```
 
@@ -84,6 +85,31 @@ is rebuilt by the test script; never edit it by hand.
 - HPACK tables are allocated once at init; header blocks are decoded through
   a callback whose strings are only valid during the call.
 - Tests run under the tracking allocator: a leak fails review.
+
+## gRPC transport rules (grpc/)
+
+The full design is documented at the top of `grpc/conn.odin`. In short:
+
+- Per connection: a **reader thread** (all frame processing, HPACK
+  decoding; the only thread that closes the socket) and a **writer thread**
+  (drains the outgoing frame queue). Application threads enqueue frames.
+- **Lock order: `Conn.q_mu` -> `Conn.mu`.** `Server.mu` and `Channel.mu` are
+  never held while acquiring connection locks in the reverse direction, and
+  connections are never released while holding `Channel.mu` (freeing a
+  connection notifies its owner).
+- The reader never waits for queue space or the socket: control frames go
+  to `Conn.ctrl` and are flushed after each frame; a queue past
+  `QUEUE_HARD_LIMIT` is a flood (ENHANCE_YOUR_CALM).
+- HPACK encoding happens under `q_mu`, in the same critical section that
+  queues the HEADERS frame (encoder state must match wire order). Client
+  stream ids are allocated in that same section.
+- Every blocking wait (`wait_locked`) must have a wake-up for data, reset,
+  connection loss and deadline; `stream_failure_locked` is the single
+  source of truth for "this stream can no longer make progress".
+- Lifetimes: `Conn` is reference counted (reader, owner, each stream).
+  `server_shutdown` and `channel_destroy` wait until their connections are
+  freed; client streams must be destroyed before their channel.
+- Self-cleaning threads are created with the heap allocator.
 
 ## Testing requirements
 

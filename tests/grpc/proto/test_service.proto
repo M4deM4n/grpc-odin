@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package test.svc;
+
+// Echo carries test data and instructions for the test server.
+message Echo {
+  string text = 1;
+  int32 seq = 2;
+  bytes payload = 3;
+  int32 sleep_ms = 4;     // server sleeps (checking for cancellation)
+  int32 fail_code = 5;    // server returns this status code
+  string fail_message = 6;
+  int32 count = 7;        // server-streaming: number of responses
+  int32 response_bytes = 8; // server fills the response payload with this many octets
+}
+
+service Tester {
+  rpc Unary(Echo) returns (Echo);
+  rpc ServerStream(Echo) returns (stream Echo);
+  rpc ClientStream(stream Echo) returns (Echo);
+  rpc Bidi(stream Echo) returns (stream Echo);
+  rpc NotImplemented(Echo) returns (Echo);
+}

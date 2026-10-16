@@ -39,6 +39,9 @@ Generator :: struct {
 	primary_packages: map[string]bool,
 	// Escaped Odin names of enum values, by enum.
 	enum_value_names: map[^Enum][]string,
+	// Client stub procedure name per method (made unique, e.g. an RPC
+	// named Register becomes <Svc>_register_ next to <Svc>_register).
+	stub_names:       map[^Method]string,
 }
 
 // generate emits one Odin source file per loaded .proto file plus a file of
@@ -58,6 +61,7 @@ generate :: proc(c: ^Compiler, opts: Gen_Options) -> (files: []Output_File, ok: 
 		messages         = make([dynamic]^Message, c.allocator),
 		primary_packages = make(map[string]bool, c.allocator),
 		enum_value_names = make(map[^Enum][]string, c.allocator),
+		stub_names       = make(map[^Method]string, c.allocator),
 	}
 	if g.opts.protobuf_import == "" {
 		g.opts.protobuf_import = DEFAULT_PROTOBUF_IMPORT
@@ -288,8 +292,9 @@ assign_names :: proc(g: ^Generator, f: ^File) {
 		}
 		for m in s.methods {
 			method_snake := snake_case(m.name, g.allocator)
-			reserve_global(g, strings.concatenate({s.odin_name, "_", method_snake}, g.allocator), what, m.pos)
+			g.stub_names[m] = unique_global(g, strings.concatenate({s.odin_name, "_", method_snake}, g.allocator), what)
 			reserve_global(g, strings.concatenate({s.odin_name, "_", m.name, "_METHOD"}, g.allocator), what, m.pos)
+			reserve_global(g, strings.concatenate({s.odin_name, "_", m.name, "_handler"}, g.allocator), what, m.pos)
 			if m.client_streaming || m.server_streaming {
 				for suffix in STREAM_SUFFIXES {
 					reserve_global(g, strings.concatenate({s.odin_name, "_", m.name, suffix}, g.allocator), what, m.pos)
@@ -416,7 +421,7 @@ enum_value_name :: proc(g: ^Generator, e: ^Enum, proto_name: string) -> string {
 // Output helpers
 // -----------------------------------------------------------------------------
 
-@(private = "file")
+@(private)
 line :: proc(g: ^Generator, format: string, args: ..any) {
 	for _ in 0 ..< g.indent {
 		strings.write_byte(&g.b, '\t')
@@ -425,18 +430,18 @@ line :: proc(g: ^Generator, format: string, args: ..any) {
 	strings.write_byte(&g.b, '\n')
 }
 
-@(private = "file")
+@(private)
 blank :: proc(g: ^Generator) {
 	strings.write_byte(&g.b, '\n')
 }
 
-@(private = "file")
+@(private)
 open :: proc(g: ^Generator, format: string, args: ..any) {
 	line(g, format, ..args)
 	g.indent += 1
 }
 
-@(private = "file")
+@(private)
 close :: proc(g: ^Generator) {
 	g.indent -= 1
 	line(g, "}}")
@@ -460,7 +465,7 @@ header :: proc(g: ^Generator, source: string, imports: []string) {
 	}
 }
 
-@(private = "file")
+@(private)
 sprint :: proc(g: ^Generator, format: string, args: ..any) -> string {
 	return fmt.aprintf(format, ..args, allocator = g.allocator)
 }
@@ -721,7 +726,7 @@ tag_len :: proc(field: u32) -> int {
 @(private = "file")
 gen_file :: proc(g: ^Generator, f: ^File) -> string {
 	imports := make([dynamic]string, g.allocator)
-	if len(f.messages) > 0 || (g.opts.generate_services && len(f.services) > 0) {
+	if len(f.messages) > 0 {
 		append(&imports, sprint(g, "import pb \"%s\"", g.opts.protobuf_import))
 	}
 	if g.opts.generate_services && len(f.services) > 0 {

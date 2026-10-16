@@ -284,6 +284,23 @@ enum Kw { in = 0; map = 1; }`,
 }
 
 @(test)
+test_rpc_names_colliding_with_generated_procs :: proc(t: ^testing.T) {
+	r: Result
+	defer destroy(&r)
+	compile(
+		&r,
+		{{"svc.proto", `syntax = "proto3"; message M {} service Greeter { rpc Register(M) returns (M); rpc Get(M) returns (M); }`}},
+		{"svc.proto"},
+	)
+	expect_ok(t, &r)
+	out := output(&r, "svc.pb.odin")
+	// The registration proc keeps its name; the stub gets a unique one.
+	testing.expect(t, strings.contains(out, "\nGreeter_register :: proc(s: ^grpc.Server"))
+	testing.expect(t, strings.contains(out, "\nGreeter_register_ :: proc(ch: ^grpc.Channel"))
+	testing.expect(t, strings.contains(out, "\nGreeter_get :: proc(ch: ^grpc.Channel"))
+}
+
+@(test)
 test_naming_collisions_are_errors :: proc(t: ^testing.T) {
 	// Types named like generated locals or builtins.
 	expect_error(t, `syntax = "proto3"; message m {}`, "collides with an identifier used inside generated procedures")
