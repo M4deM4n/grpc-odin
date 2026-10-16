@@ -1,0 +1,32 @@
+syntax = "proto2";
+
+package test.legacy;
+
+enum Mode {
+  MODE_ZERO = 0;
+  MODE_ONE = 1;
+}
+
+enum Level {
+  LOW = 1;
+  HIGH = 2;
+}
+
+message Legacy {
+  required int32 id = 1;
+  optional string name = 2;
+  repeated int32 unpacked = 3;
+  repeated int32 packed = 4 [packed = true];
+  optional Level level = 5;
+  optional Legacy child = 6;
+  optional bytes data = 7 [default = "x\001\"y"];
+  repeated Level levels = 8 [packed = true];
+  map<int32, Mode> mode_map = 9;
+  optional int32 count = 10 [default = -5];
+  optional double ratio = 11 [default = -inf];
+  optional float scale = 12 [default = 1.5];
+  optional Level def_level = 13 [default = HIGH];
+  optional bool flag = 14 [default = true];
+  optional uint64 big = 15 [default = 0xFFFFFFFFFFFFFFFF];
+  optional string greeting = 16 [default = "hi\n"];
+}
