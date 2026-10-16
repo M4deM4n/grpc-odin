@@ -12,6 +12,8 @@ Gen_Options :: struct {
 	grpc_import:       string,
 	// Generate gRPC client/server code for services.
 	generate_services: bool,
+	// Do not embed serialized file descriptors (used by server reflection).
+	no_descriptors:    bool,
 }
 
 DEFAULT_PROTOBUF_IMPORT :: "grpc:protobuf"
@@ -42,6 +44,8 @@ Generator :: struct {
 	// Client stub procedure name per method (made unique, e.g. an RPC
 	// named Register becomes <Svc>_register_ next to <Svc>_register).
 	stub_names:       map[^Method]string,
+	// <stem>_FILE_DESCRIPTOR variable name per file.
+	descriptor_names: map[^File]string,
 }
 
 // generate emits one Odin source file per loaded .proto file plus a file of
@@ -62,6 +66,7 @@ generate :: proc(c: ^Compiler, opts: Gen_Options) -> (files: []Output_File, ok: 
 		primary_packages = make(map[string]bool, c.allocator),
 		enum_value_names = make(map[^Enum][]string, c.allocator),
 		stub_names       = make(map[^Method]string, c.allocator),
+		descriptor_names = make(map[^File]string, c.allocator),
 	}
 	if g.opts.protobuf_import == "" {
 		g.opts.protobuf_import = DEFAULT_PROTOBUF_IMPORT
@@ -89,6 +94,14 @@ generate :: proc(c: ^Compiler, opts: Gen_Options) -> (files: []Output_File, ok: 
 	for f in c.order {
 		assign_names(&g, f)
 	}
+	if !g.opts.no_descriptors {
+		reserve_global(&g, "FILE_DESCRIPTORS", "the list of embedded file descriptors (rename the type or use --no-descriptors)", {})
+		for f in c.order {
+			// Per-file names are internal: made unique instead of rejected.
+			name := strings.concatenate({file_stem(&g, f), "_FILE_DESCRIPTOR"}, g.allocator)
+			g.descriptor_names[f] = unique_global(&g, name, fmt.aprintf("the descriptor of %s", f.path, allocator = g.allocator))
+		}
+	}
 	if has_errors(&c.diags) {
 		return nil, false
 	}
@@ -115,13 +128,20 @@ generate :: proc(c: ^Compiler, opts: Gen_Options) -> (files: []Output_File, ok: 
 
 @(private = "file")
 output_name :: proc(g: ^Generator, f: ^File) -> string {
+	return strings.concatenate({file_stem(g, f), ".pb.odin"}, g.allocator)
+}
+
+// file_stem is the file's path without ".proto", with non-identifier
+// characters replaced by '_' (e.g. "google/protobuf/empty.proto" ->
+// "google_protobuf_empty").
+@(private = "file")
+file_stem :: proc(g: ^Generator, f: ^File) -> string {
 	stem := strings.trim_suffix(f.path, ".proto")
 	b := strings.builder_make(g.allocator)
 	for i in 0 ..< len(stem) {
 		c := stem[i]
 		strings.write_byte(&b, c if is_ident_char(c) else '_')
 	}
-	strings.write_string(&b, ".pb.odin")
 	return strings.to_string(b)
 }
 
@@ -726,7 +746,7 @@ tag_len :: proc(field: u32) -> int {
 @(private = "file")
 gen_file :: proc(g: ^Generator, f: ^File) -> string {
 	imports := make([dynamic]string, g.allocator)
-	if len(f.messages) > 0 {
+	if len(f.messages) > 0 || !g.opts.no_descriptors {
 		append(&imports, sprint(g, "import pb \"%s\"", g.opts.protobuf_import))
 	}
 	if g.opts.generate_services && len(f.services) > 0 {
@@ -745,7 +765,37 @@ gen_file :: proc(g: ^Generator, f: ^File) -> string {
 			gen_service(g, s)
 		}
 	}
+	if !g.opts.no_descriptors {
+		gen_file_descriptor(g, f)
+	}
 	return strings.to_string(g.b)
+}
+
+// gen_file_descriptor embeds the file's serialized FileDescriptorProto.
+@(private = "file")
+gen_file_descriptor :: proc(g: ^Generator, f: ^File) {
+	data := build_file_descriptor(f, g.allocator)
+	blank(g)
+	line(g, "// %s is the serialized google.protobuf.FileDescriptorProto of %s,", g.descriptor_names[f], f.path)
+	line(g, "// served by server reflection.")
+	open(g, "%s := pb.File_Descriptor{{", g.descriptor_names[f])
+	line(g, "name = %q,", f.path)
+	if len(data) == 0 {
+		line(g, "data = \"\",")
+	} else {
+		CHUNK :: 40
+		for start := 0; start < len(data); start += CHUNK {
+			chunk := data[start:min(start + CHUNK, len(data))]
+			b := strings.builder_make(g.allocator)
+			strings.write_string(&b, "data = \"" if start == 0 else "\t\"")
+			for c in chunk {
+				fmt.sbprintf(&b, "\\x%02x", c)
+			}
+			strings.write_string(&b, "\"," if start + CHUNK >= len(data) else "\" +")
+			line(g, "%s", strings.to_string(b))
+		}
+	}
+	close(g)
 }
 
 @(private = "file")
@@ -1539,7 +1589,21 @@ gen_codec :: proc(g: ^Generator, m: ^Message) {
 
 @(private = "file")
 gen_groups :: proc(g: ^Generator) -> string {
-	header(g, "", {})
+	imports: []string
+	if !g.opts.no_descriptors {
+		imports = {sprint(g, "import pb \"%s\"", g.opts.protobuf_import)}
+	}
+	header(g, "", imports)
+	if !g.opts.no_descriptors {
+		blank(g)
+		line(g, "// FILE_DESCRIPTORS lists the descriptors of every file in this package,")
+		line(g, "// e.g. for reflection.server_register.")
+		open(g, "FILE_DESCRIPTORS := [?]^pb.File_Descriptor{{")
+		for f in g.c.order {
+			line(g, "&%s,", g.descriptor_names[f])
+		}
+		close(g)
+	}
 	if len(g.messages) == 0 {
 		return strings.to_string(g.b)
 	}

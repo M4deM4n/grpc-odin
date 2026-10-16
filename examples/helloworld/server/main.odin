@@ -9,6 +9,7 @@ import "core:os"
 import "core:strings"
 
 import "grpc:grpc"
+import "grpc:reflection"
 import pb "../pb"
 
 say_hello :: proc(srv: ^pb.Greeter_Server, call: ^grpc.Server_Call, req: ^pb.HelloRequest, resp: ^pb.HelloReply) -> grpc.Status {
@@ -48,6 +49,15 @@ main :: proc() {
 	grpc.server_init(&server)
 	defer grpc.server_destroy(&server)
 	pb.Greeter_register(&server, &impl)
+
+	// Server reflection lets tools (grpcurl, examples/reflection) discover
+	// the Greeter service without its .proto file.
+	refl: reflection.Server
+	if !reflection.server_register(&refl, &server, pb.FILE_DESCRIPTORS[:]) {
+		fmt.eprintln("cannot enable server reflection")
+		os.exit(1)
+	}
+	defer reflection.server_destroy(&refl)
 
 	ep, ok := grpc.server_start(&server, address)
 	if !ok {

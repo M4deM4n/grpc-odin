@@ -43,6 +43,8 @@ init_file :: proc(f: ^File, a: Allocator) {
 	f.messages = make([dynamic]^Message, a)
 	f.enums = make([dynamic]^Enum, a)
 	f.services = make([dynamic]^Service, a)
+	f.options = make([dynamic]Option, a)
+	f.extensions = make([dynamic]^Field, a)
 }
 
 // -----------------------------------------------------------------------------
@@ -328,7 +330,13 @@ field_options :: proc(p: ^Parser, f: ^Field) -> bool {
 	}
 	for {
 		o := option_body(p) or_return
+		append(&f.options, o)
 		switch o.name {
+		case "json_name":
+			if o.value.kind != .String {
+				error_at(p.diags, o.value.pos, "json_name must be a string")
+			}
+			f.json_name = o.value.text
 		case "packed":
 			f.packed = bool_option(p, o) or_return
 		case "deprecated":
@@ -338,8 +346,8 @@ field_options :: proc(p: ^Parser, f: ^Field) -> bool {
 				error_at(p.diags, o.value.pos, "explicit default values are not allowed in proto3")
 			}
 			f.default_value = o.value
-		// Other options (json_name, ctype, lazy, custom options...) do not
-		// affect the generated code.
+		// Other options (ctype, lazy, custom options...) do not affect the
+		// generated code; they are kept in f.options for descriptors.
 		}
 		if !accept_symbol(p, ",") {
 			break
@@ -411,7 +419,8 @@ parse_top_level :: proc(p: ^Parser) {
 			expect_symbol(p, ";") or_break
 			append(&p.file.imports, imp)
 		case "option":
-			option_statement(p)
+			o := option_statement(p) or_break
+			append(&p.file.options, o)
 		case "message":
 			m := parse_message(p, nil) or_break
 			append(&p.file.messages, m)
@@ -422,7 +431,7 @@ parse_top_level :: proc(p: ^Parser) {
 			s := parse_service(p) or_break
 			append(&p.file.services, s)
 		case "extend":
-			parse_extend(p)
+			parse_extend(p, nil)
 		case:
 			fail(p, "unexpected '%s' at top level", p.tok.text)
 			return
@@ -449,6 +458,10 @@ new_message :: proc(p: ^Parser, name: string, pos: Pos, parent: ^Message) -> ^Me
 	m.enums = make([dynamic]^Enum, a)
 	m.reserved_ranges = make([dynamic]Range, a)
 	m.reserved_names = make([dynamic]string, a)
+	m.extension_ranges = make([dynamic]Range, a)
+	m.options = make([dynamic]Option, a)
+	m.nested_order = make([dynamic]Nested_Item, a)
+	m.extensions = make([dynamic]^Field, a)
 	return m
 }
 
@@ -480,6 +493,9 @@ parse_message_body :: proc(p: ^Parser, m: ^Message) -> bool {
 			// A field whose type is fully qualified (".pkg.Type name = 1;").
 			f := parse_field(p, m, nil) or_return
 			append(&m.fields, f)
+			if f.is_map {
+				append(&m.nested_order, f)
+			}
 			continue
 		}
 		if p.tok.kind != .Ident {
@@ -489,32 +505,50 @@ parse_message_body :: proc(p: ^Parser, m: ^Message) -> bool {
 		case "message":
 			nested := parse_message(p, m) or_return
 			append(&m.messages, nested)
+			append(&m.nested_order, nested)
 		case "enum":
 			e := parse_enum(p, m) or_return
 			append(&m.enums, e)
 		case "option":
-			option_statement(p) or_return
+			o := option_statement(p) or_return
+			append(&m.options, o)
 		case "oneof":
 			parse_oneof(p, m) or_return
 		case "reserved":
 			parse_reserved(p, &m.reserved_ranges, &m.reserved_names, MAX_FIELD) or_return
 		case "extensions":
-			// Extension ranges only matter for extensions, which are not
-			// generated; parse and discard.
+			// Extensions are not generated, but their ranges are part of
+			// the message descriptor.
 			next(p)
-			for !p.failed && !is_symbol(p, ";") && p.tok.kind != .EOF {
-				if is_symbol(p, "[") {
-					skip_bracketed(p) or_return
-				} else {
+			for {
+				lo := reserved_number(p, MAX_FIELD) or_return
+				hi := lo
+				if is_keyword(p, "to") {
 					next(p)
+					if is_keyword(p, "max") {
+						next(p)
+						hi = MAX_FIELD
+					} else {
+						hi = reserved_number(p, MAX_FIELD) or_return
+					}
 				}
+				append(&m.extension_ranges, Range{lo, hi})
+				if !accept_symbol(p, ",") {
+					break
+				}
+			}
+			if is_symbol(p, "[") {
+				skip_bracketed(p) or_return
 			}
 			expect_symbol(p, ";") or_return
 		case "extend":
-			parse_extend(p) or_return
+			parse_extend(p, m) or_return
 		case:
 			f := parse_field(p, m, nil) or_return
 			append(&m.fields, f)
+			if f.is_map {
+				append(&m.nested_order, f)
+			}
 		}
 	}
 	return false
@@ -527,6 +561,7 @@ parse_field :: proc(p: ^Parser, m: ^Message, oneof: ^Oneof) -> (f: ^Field, ok: b
 	f = new(Field, p.allocator)
 	f.pos = p.tok.pos
 	f.file = p.file
+	f.options = make([dynamic]Option, p.allocator)
 	f.oneof = oneof
 	f.label = .Implicit
 	has_label := false
@@ -639,6 +674,7 @@ parse_oneof :: proc(p: ^Parser, m: ^Message) -> bool {
 	o := new(Oneof, p.allocator)
 	o.pos = p.tok.pos
 	o.fields = make([dynamic]^Field, p.allocator)
+	o.options = make([dynamic]Option, p.allocator)
 	o.name = expect_name(p, "oneof name") or_return
 	expect_symbol(p, "{") or_return
 	for !p.failed {
@@ -649,7 +685,8 @@ parse_oneof :: proc(p: ^Parser, m: ^Message) -> bool {
 			continue
 		}
 		if is_keyword(p, "option") {
-			option_statement(p) or_return
+			opt := option_statement(p) or_return
+			append(&o.options, opt)
 			continue
 		}
 		if is_keyword(p, "optional") || is_keyword(p, "required") || is_keyword(p, "repeated") {
@@ -746,29 +783,33 @@ skip_bracketed :: proc(p: ^Parser) -> bool {
 	return fail(p, "unterminated '['")
 }
 
-// parse_extend parses and discards an `extend` block. Extensions (other than
-// custom options, which have no runtime effect) are not supported by the
-// generator; the declaration is accepted so that common option-defining
-// files still parse.
+// parse_extend parses an `extend` block. Extension fields are recorded for
+// descriptors (custom option declarations are the common case); no code is
+// generated for them.
 @(private = "file")
-parse_extend :: proc(p: ^Parser) -> bool {
+parse_extend :: proc(p: ^Parser, parent: ^Message) -> bool {
 	expect_keyword(p, "extend") or_return
-	type_name(p) or_return
+	extendee := type_name(p) or_return
 	expect_symbol(p, "{") or_return
-	depth := 1
-	for p.tok.kind != .EOF {
-		if is_symbol(p, "{") {
-			depth += 1
-		} else if is_symbol(p, "}") {
-			depth -= 1
-			if depth == 0 {
-				next(p)
-				return true
-			}
+	for !p.failed {
+		if accept_symbol(p, "}") {
+			return true
 		}
-		next(p)
+		if accept_symbol(p, ";") {
+			continue
+		}
+		if is_keyword(p, "oneof") || is_keyword(p, "option") || is_keyword(p, "message") || is_keyword(p, "enum") {
+			return fail(p, "'%s' is not allowed in an extend block", p.tok.text)
+		}
+		f := parse_field(p, parent, nil) or_return
+		if f.is_map {
+			error_at(p.diags, f.pos, "extensions cannot be map fields")
+		}
+		f.is_extension = true
+		f.extendee = {name = extendee}
+		append(&parent.extensions if parent != nil else &p.file.extensions, f)
 	}
-	return fail(p, "unterminated extend block")
+	return false
 }
 
 // -----------------------------------------------------------------------------
@@ -786,6 +827,7 @@ parse_enum :: proc(p: ^Parser, parent: ^Message) -> (e: ^Enum, ok: bool) {
 	e.values = make([dynamic]Enum_Value, a)
 	e.reserved_ranges = make([dynamic]Range, a)
 	e.reserved_names = make([dynamic]string, a)
+	e.options = make([dynamic]Option, a)
 	e.name = expect_name(p, "enum name") or_return
 	expect_symbol(p, "{") or_return
 	for !p.failed {
@@ -800,6 +842,7 @@ parse_enum :: proc(p: ^Parser, parent: ^Message) -> (e: ^Enum, ok: bool) {
 			if o.name == "allow_alias" {
 				e.allow_alias = bool_option(p, o) or_return
 			}
+			append(&e.options, o)
 			continue
 		}
 		if is_keyword(p, "reserved") {
@@ -821,8 +864,10 @@ parse_enum :: proc(p: ^Parser, parent: ^Message) -> (e: ^Enum, ok: bool) {
 		v.number = i32(-i64(u)) if negative else i32(u)
 		next(p)
 		if accept_symbol(p, "[") {
+			v.options = make([dynamic]Option, p.allocator)
 			for {
-				option_body(p) or_return
+				o := option_body(p) or_return
+				append(&v.options, o)
 				if !accept_symbol(p, ",") {
 					break
 				}
@@ -852,6 +897,7 @@ parse_service :: proc(p: ^Parser) -> (s: ^Service, ok: bool) {
 	s.pos = p.tok.pos
 	s.file = p.file
 	s.methods = make([dynamic]^Method, p.allocator)
+	s.options = make([dynamic]Option, p.allocator)
 	s.name = expect_name(p, "service name") or_return
 	expect_symbol(p, "{") or_return
 	for !p.failed {
@@ -862,7 +908,8 @@ parse_service :: proc(p: ^Parser) -> (s: ^Service, ok: bool) {
 			continue
 		}
 		if is_keyword(p, "option") {
-			option_statement(p) or_return
+			o := option_statement(p) or_return
+			append(&s.options, o)
 			continue
 		}
 		if !is_keyword(p, "rpc") {
@@ -870,16 +917,19 @@ parse_service :: proc(p: ^Parser) -> (s: ^Service, ok: bool) {
 		}
 		next(p)
 		m := new(Method, p.allocator)
+		m.options = make([dynamic]Option, p.allocator)
 		m.name, m.pos = expect_ident(p, "method name") or_return
 		m.client_streaming, m.input = method_type(p) or_return
 		expect_keyword(p, "returns") or_return
 		m.server_streaming, m.output = method_type(p) or_return
 		if accept_symbol(p, "{") {
+			m.has_body = true
 			for !p.failed && !accept_symbol(p, "}") {
 				if accept_symbol(p, ";") {
 					continue
 				}
-				option_statement(p) or_return
+				o := option_statement(p) or_return
+				append(&m.options, o)
 			}
 		} else {
 			expect_symbol(p, ";") or_return

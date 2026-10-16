@@ -1,6 +1,5 @@
 package protoc
 
-import "core:strconv"
 import "core:strings"
 
 Pos :: struct {
@@ -289,12 +288,35 @@ scan_string :: proc(l: ^Lexer, pos: Pos) -> Token {
 }
 
 // parse_int_literal converts an Int token (decimal, 0x hex or 0 octal).
+// Returns ok = false for malformed literals and for values above max(u64).
 parse_int_literal :: proc(text: string) -> (value: u64, ok: bool) {
+	base: u64 = 10
+	digits := text
 	if len(text) > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X') {
-		return strconv.parse_u64_of_base(text[2:], 16)
+		base, digits = 16, text[2:]
+	} else if len(text) > 1 && text[0] == '0' {
+		base, digits = 8, text[1:]
 	}
-	if len(text) > 1 && text[0] == '0' {
-		return strconv.parse_u64_of_base(text[1:], 8)
+	if len(digits) == 0 {
+		return 0, false
 	}
-	return strconv.parse_u64_of_base(text, 10)
+	for i in 0 ..< len(digits) {
+		c := digits[i]
+		d: u64
+		switch c {
+		case '0' ..= '9':
+			d = u64(c - '0')
+		case 'a' ..= 'f':
+			d = u64(c - 'a' + 10)
+		case 'A' ..= 'F':
+			d = u64(c - 'A' + 10)
+		case:
+			return 0, false
+		}
+		if d >= base || value > (max(u64) - d) / base {
+			return 0, false
+		}
+		value = value * base + d
+	}
+	return value, true
 }

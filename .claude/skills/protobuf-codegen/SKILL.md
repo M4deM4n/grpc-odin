@@ -23,6 +23,12 @@ well-known types live in `well_known.odin`.
   `<Msg>_<Oneof>_<Field>`; `_unknown_fields: [dynamic]u8` on every message.
 - Per message: `_size`, `_encode_fields` (backwards), `_decode_fields`,
   `_marshal`, `_unmarshal`, `_destroy`, `_CODEC` (`pb.Message_Codec`).
+- Each file embeds its serialized FileDescriptorProto as
+  `<stem>_FILE_DESCRIPTOR` (built by `protoc/descriptor.odin`, byte-identical
+  to Google's protoc; checked by `tests/protoc/descriptor_test.odin` against
+  `tests/protoc/testdata/*.desc.bin`); the package lists them in
+  `FILE_DESCRIPTORS`. Any parser change that affects descriptors (options,
+  ordering, json_name, defaults) must keep that test byte-exact.
 - Closed (proto2) enums get `<Enum>_is_known`; undeclared values go to
   unknown fields. proto2 defaults become `<Msg>_<field>_DEFAULT` constants.
 - Names that are Odin keywords/builtins get a `_` suffix (made unique);

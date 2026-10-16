@@ -92,6 +92,15 @@ Message_Codec :: struct {
 	decode_fields: proc(msg: rawptr, d: ^Decoder) -> Error,
 }
 
+// File_Descriptor is a .proto file's serialized
+// google.protobuf.FileDescriptorProto, embedded in generated code by
+// odin-protoc (each package lists its files in FILE_DESCRIPTORS). Server
+// reflection serves these to clients.
+File_Descriptor :: struct {
+	name: string, // import path, e.g. "helloworld.proto"
+	data: string, // serialized FileDescriptorProto
+}
+
 // marshal encodes msg into a newly allocated buffer of exactly its size.
 marshal :: proc(msg: rawptr, codec: ^Message_Codec, allocator := context.allocator) -> (data: []u8, err: Error) {
 	n := codec.size(msg)

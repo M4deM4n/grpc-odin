@@ -1,0 +1,67 @@
+// Exercises descriptor generation (proto3): options, json_name, maps,
+// oneofs, proto3 optional, reserved ranges, nested types and services.
+syntax = "proto3";
+
+package desc.three;
+
+option java_package = "com.example.desc";
+option java_multiple_files = true;
+option go_package = "example.com/desc/three;three";
+option optimize_for = SPEED;
+option csharp_namespace = "Desc.Three";
+option cc_enable_arenas = true;
+option deprecated = false;
+
+message Outer {
+  option deprecated = true;
+
+  message Inner {
+    int32 x = 1;
+    enum Kind {
+      KIND_UNSPECIFIED = 0;
+      KIND_A = 1;
+    }
+    Kind kind = 2;
+  }
+  map<string, Inner> by_name = 1;
+  int64 big_id = 2 [jstype = JS_STRING];
+  string renamed = 3 [json_name = "customName", deprecated = true];
+  repeated int32 not_packed = 4 [packed = false];
+  map<int32, string> labels = 5;
+  optional string maybe = 6;
+  oneof choice {
+    string text = 7;
+    Inner inner = 8;
+  }
+  message Later {}
+  repeated Later laters = 9;
+  bytes data = 10 [ctype = CORD];
+  .desc.three.Outer.Inner absolute = 11;
+  optional int32 maybe_number = 12;
+  reserved 20 to 25, 30, 100 to max;
+  reserved "old_field", "older_field";
+}
+
+enum Status {
+  option allow_alias = true;
+  option deprecated = true;
+  STATUS_UNKNOWN = 0;
+  STATUS_OK = 1;
+  STATUS_FINE = 1 [deprecated = true];
+  STATUS_BAD = -2;
+  reserved 10 to 20, 50;
+  reserved "STATUS_GONE";
+}
+
+service Api {
+  option deprecated = true;
+  rpc Get(Outer) returns (Outer.Inner) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc Stream(stream Outer) returns (stream Outer) {
+    option deprecated = true;
+  }
+  rpc Plain(Outer.Inner) returns (Outer);
+  rpc EmptyBody(Outer) returns (Outer) {}
+  rpc SemicolonBody(Outer) returns (Outer) { ; }
+}

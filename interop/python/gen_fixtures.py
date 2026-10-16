@@ -127,6 +127,36 @@ def main():
             f.write(svc.DESCRIPTOR.serialized_pb)
         print(f"wrote {os.path.relpath(path, ROOT)} ({len(svc.DESCRIPTOR.serialized_pb)} bytes)")
 
+        # Reference FileDescriptorProtos for odin-protoc's descriptor
+        # generation (tests/protoc): Google's protoc output, byte for byte.
+        desc_dir = os.path.join(ROOT, "tests", "protoc", "testdata")
+        os.makedirs(desc_dir, exist_ok=True)
+        sets = [
+            (os.path.join(ROOT, "tests", "protoc", "proto"), ["descriptor_test3.proto", "descriptor_test2.proto"]),
+            (PROTO_DIR, ["test_all.proto", "legacy.proto"]),
+            (grpc_proto, ["test_service.proto"]),
+            (os.path.join(ROOT, "examples", "helloworld"), ["helloworld.proto"]),
+        ]
+        import grpc_tools
+
+        include = os.path.join(os.path.dirname(grpc_tools.__file__), "_proto")
+        for proto_dir, names in sets:
+            out = os.path.join(tmp, "desc_" + os.path.basename(proto_dir))
+            os.makedirs(out, exist_ok=True)
+            for name in names:
+                if protoc.main(["protoc", f"-I{proto_dir}", f"-I{include}", f"--python_out={out}", name]) != 0:
+                    sys.exit(f"protoc failed for {name}")
+            sys.path.insert(0, out)
+            for name in names:
+                module = name[: -len(".proto")].replace("/", ".") + "_pb2"
+                sys.modules.pop(module, None)
+                mod = importlib.import_module(module)
+                path = os.path.join(desc_dir, name.replace(".proto", ".desc.bin"))
+                with open(path, "wb") as f:
+                    f.write(mod.DESCRIPTOR.serialized_pb)
+                print(f"wrote {os.path.relpath(path, ROOT)} ({len(mod.DESCRIPTOR.serialized_pb)} bytes)")
+            sys.path.remove(out)
+
 
 if __name__ == "__main__":
     main()

@@ -103,8 +103,33 @@ msg, file, _ := reflection.describe_message(&rc, "helloworld.HelloRequest")  // 
 The client tries `grpc.reflection.v1` and falls back to `v1alpha` (which
 many servers, e.g. grpcio, still serve). Raw descriptors are available via
 `file_containing_symbol` / `file_by_filename`, decoded with a wire-compatible
-subset of `descriptor.proto` (unknown parts are preserved). Serving
-reflection from an Odin server is not implemented.
+subset of `descriptor.proto` (unknown parts are preserved).
+
+### Server reflection (server side)
+
+`odin-protoc` embeds each file's `FileDescriptorProto` in the generated code
+(byte-identical to what Google's protoc produces), and every generated
+package lists its files in `FILE_DESCRIPTORS`. Serve them with:
+
+```odin
+refl: reflection.Server
+reflection.server_register(&refl, &server, pb.FILE_DESCRIPTORS[:])  // v1 + v1alpha
+// ... grpc.server_start, ..., grpc.server_shutdown
+reflection.server_destroy(&refl)
+```
+
+Tools such as `grpcurl`, Postman or grpcio's reflection client can then list
+the services and build requests dynamically. Pass the `FILE_DESCRIPTORS` of
+every generated package whose services you register (`server_register`
+takes several lists); register before `grpc.server_start`.
+
+The embedded descriptors are byte-identical to Google's protoc output,
+including the well-known types, options and `extend` declarations, with
+two exceptions: custom option *values* (e.g. `(google.api.http) = {...}`)
+are omitted, since odin-protoc does not evaluate extensions, and float
+defaults written in exponent form use C99 text (`1e+20`, as Linux protoc
+prints them; MSVC builds of protoc print `1e+020`). `--no-descriptors` turns
+embedding off.
 
 ## Generated code
 
@@ -168,9 +193,8 @@ Well-known types `empty`, `timestamp`, `duration`, `wrappers`, `any`,
   streams the client opened concurrently are refused (REFUSED_STREAM),
   which clients retry transparently.
 - Not supported: protobuf editions, extensions, groups, JSON mapping,
-  serving reflection or health checking from an Odin server, client-side
-  load balancing, retries beyond transparent retry of streams the server
-  refused.
+  the health checking service, client-side load balancing, retries beyond
+  transparent retry of streams the server refused.
 
 ## Development
 

@@ -2,6 +2,15 @@
 
 package reflection
 
+import pb "../protobuf"
+
+// FILE_DESCRIPTORS lists the descriptors of every file in this package,
+// e.g. for reflection.server_register.
+FILE_DESCRIPTORS := [?]^pb.File_Descriptor{
+	&grpc_reflection_v1_reflection_FILE_DESCRIPTOR,
+	&odin_grpc_descriptor_subset_FILE_DESCRIPTOR,
+}
+
 // Procedure groups over all generated messages.
 
 size :: proc {

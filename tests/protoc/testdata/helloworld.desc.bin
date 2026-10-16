@@ -1,0 +1,11 @@
+
+helloworld.proto
+helloworld"
+HelloRequest
+name (	"
+
+HelloReply
+message (	2Š
+Greeter<
+SayHello.helloworld.HelloRequest.helloworld.HelloReplyA
+SayHelloAll.helloworld.HelloRequest.helloworld.HelloReply0bproto3

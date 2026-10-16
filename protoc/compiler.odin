@@ -101,6 +101,11 @@ compiler_load :: proc(c: ^Compiler, import_path: string, from: Pos = {}) -> ^Fil
 	defer delete_key(&c.loading, path)
 
 	f := parse_file(path, src, &c.diags, c.allocator)
+	for wkt in WELL_KNOWN_TYPES {
+		if wkt.path == path && c.sources[path] == wkt.source {
+			f.all_json_names = true
+		}
+	}
 	for &imp in f.imports {
 		if imp.path == path {
 			error_at(&c.diags, imp.pos, "file imports itself")
@@ -165,6 +170,9 @@ compiler_resolve :: proc(c: ^Compiler) -> bool {
 		visible := visible_files(c, f)
 		for m in f.messages {
 			resolve_message(c, f, m, visible)
+		}
+		for ext in f.extensions {
+			resolve_extension(c, f, f.package_name, ext, visible)
 		}
 		for s in f.services {
 			resolve_service(c, f, s, visible)
@@ -349,8 +357,30 @@ resolve_message :: proc(c: ^Compiler, f: ^File, m: ^Message, visible: map[^File]
 			resolve_type(c, f, m.full_name, &field.type, field.pos, visible)
 		}
 	}
+	for ext in m.extensions {
+		resolve_extension(c, f, m.full_name, ext, visible)
+	}
 	for nested in m.messages {
 		resolve_message(c, f, nested, visible)
+	}
+}
+
+// resolve_extension resolves an extension's type and extendee (scoped like
+// any field of the enclosing scope) and checks it extends a message within
+// one of its extension ranges.
+@(private = "file")
+resolve_extension :: proc(c: ^Compiler, f: ^File, scope: string, ext: ^Field, visible: map[^File]bool) {
+	resolve_type(c, f, scope, &ext.type, ext.pos, visible)
+	resolve_type(c, f, scope, &ext.extendee, ext.pos, visible)
+	target := ext.extendee.message
+	if target == nil {
+		if ext.extendee.enum_ != nil {
+			error_at(&c.diags, ext.pos, "'%s' is not a message and cannot be extended", ext.extendee.name)
+		}
+		return
+	}
+	if !in_ranges(target.extension_ranges[:], i64(ext.number)) {
+		error_at(&c.diags, ext.pos, "'%s' does not declare %d as an extension number", target.full_name, ext.number)
 	}
 }
 

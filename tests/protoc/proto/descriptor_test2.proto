@@ -1,0 +1,55 @@
+// Exercises descriptor generation (proto2): defaults, extension ranges,
+// required fields, packed options and imports.
+syntax = "proto2";
+
+package desc.two;
+
+import "descriptor_test3.proto";
+
+enum Color {
+  RED = 1;
+  GREEN = 2;
+}
+
+message Defaults {
+  required int32 id = 1;
+  optional int32 i32 = 2 [default = -42];
+  optional uint64 u64 = 3 [default = 18446744073709551615];
+  optional sint64 s64 = 4 [default = -9223372036854775808];
+  optional double d = 5 [default = 1.5e10];
+  optional double d_inf = 6 [default = -inf];
+  optional double d_nan = 7 [default = nan];
+  optional float f = 8 [default = 0.25];
+  optional bool b = 9 [default = true];
+  optional string s = 10 [default = "he said \"hi\"\n\t\\"];
+  optional bytes by = 11 [default = "\000\001\377abc"];
+  optional Color color = 12 [default = GREEN];
+  optional int32 hex = 13 [default = 0x1F];
+  optional int32 oct = 14 [default = 017];
+  repeated int32 packed_ints = 15 [packed = true];
+  repeated int32 unpacked_ints = 16;
+  optional desc.three.Outer outer = 17;
+  // (Exponent-form float defaults are omitted: protoc's text for them is
+  // platform dependent, e.g. "9.99999975e-006" with MSVC.)
+  optional double d_int = 19 [default = 3];
+  extensions 100 to 199, 1000 to max;
+}
+
+// Extensions, top-level and nested.
+extend Defaults {
+  optional int32 ext_a = 100;
+  repeated string ext_b = 101;
+  optional Color ext_color = 102 [default = RED];
+}
+
+message Holder {
+  extend Defaults {
+    optional Holder ext_holder = 150;
+  }
+  optional int32 x = 1;
+}
+
+message Set {
+  option message_set_wire_format = true;
+  extensions 4 to max;
+}

@@ -252,7 +252,51 @@ def client(target):
                 t.join()
             check("concurrent", not errors, str(errors[:3]))
 
+        def reflection_dynamic():
+            # What grpcurl-like tools do: discover the schema through server
+            # reflection, build message classes from the descriptors alone,
+            # and call the service with them.
+            from google.protobuf import descriptor_pool, message_factory
+            from grpc_reflection.v1alpha.proto_reflection_descriptor_database import (
+                ProtoReflectionDescriptorDatabase,
+            )
+
+            db = ProtoReflectionDescriptorDatabase(channel)
+            services = set(db.get_services())
+            pool = descriptor_pool.DescriptorPool(db)
+            svc = pool.FindServiceByName("test.svc.Tester")
+            unary_m = svc.FindMethodByName("Unary")
+            stream_m = svc.FindMethodByName("ServerStream")
+            req_cls = message_factory.GetMessageClass(unary_m.input_type)
+            resp_cls = message_factory.GetMessageClass(unary_m.output_type)
+            call = channel.unary_unary(
+                "/test.svc.Tester/Unary",
+                request_serializer=req_cls.SerializeToString,
+                response_deserializer=resp_cls.FromString,
+            )
+            r = call(req_cls(text="dynamic", seq=9), timeout=T)
+            stream = channel.unary_stream(
+                "/test.svc.Tester/ServerStream",
+                request_serializer=req_cls.SerializeToString,
+                response_deserializer=resp_cls.FromString,
+            )
+            seqs = [m.seq for m in stream(req_cls(count=3), timeout=T)]
+            fields = [f.name for f in unary_m.input_type.fields]
+            check(
+                "reflection_dynamic",
+                "test.svc.Tester" in services
+                and "grpc.reflection.v1alpha.ServerReflection" in services
+                and r.text == "dynamic"
+                and r.seq == 10
+                and seqs == [0, 1, 2]
+                and stream_m.server_streaming
+                and not stream_m.client_streaming
+                and fields[:3] == ["text", "seq", "payload"],
+                f"{sorted(services)} {r} {seqs} {fields}",
+            )
+
         for name, fn in [
+            ("reflection_dynamic", reflection_dynamic),
             ("unary", unary),
             ("unary_empty", unary_empty),
             ("metadata", metadata),

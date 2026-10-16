@@ -1,0 +1,35 @@
+
+descriptor_test2.protodesc.twodescriptor_test3.proto"É
+Defaults
+
+id (
+i32 (:-42!
+u64 (:18446744073709551615!
+s64 (:-9223372036854775808
+d (:15000000000
+d_inf (:-inf
+d_nan (:nan
+f (:0.25
+b	 (:true
+s
+ (	:he said "hi"
+	\
+by (:\000\001\377abc%
+color (2.desc.two.Color:GREEN
+hex (:31
+oct (:15
+packed_ints (B
+unpacked_ints ( 
+outer (2.desc.three.Outer
+d_int (:3*dÈ*	è€€€€"N
+Holder	
+x (29
+
+ext_holder.desc.two.Defaults– (2.desc.two.Holder"
+Set*ÿÿÿÿ:*
+Color
+RED	
+GREEN:!
+ext_a.desc.two.Defaultsd (:!
+ext_b.desc.two.Defaultse (	:;
+	ext_color.desc.two.Defaultsf (2.desc.two.Color:RED

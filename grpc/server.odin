@@ -69,6 +69,7 @@ Server :: struct {
 	mu:           sync.Mutex,
 	cond:         sync.Cond, // conns/calls drained
 	methods:      map[string]Registered_Method, // by "/service/method"
+	services:     [dynamic]string, // registered service names, in order
 	listener:     net.TCP_Socket,
 	listening:    bool,
 	acceptor:     ^thread.Thread,
@@ -140,12 +141,36 @@ server_init :: proc(s: ^Server, opts := Server_Options{}, allocator := context.a
 	}
 	s.allocator = allocator
 	s.methods = make(map[string]Registered_Method, allocator)
+	s.services = make([dynamic]string, allocator)
 	s.conns = make(map[^Conn]bool, allocator)
 }
 
 // server_register adds every method of a service. Must be called before
-// server_start. Returns false if a method is already registered.
+// server_start. Returns false (registering nothing) if the server is
+// already serving, or the service or one of its methods is already
+// registered.
 server_register :: proc(s: ^Server, desc: ^Service_Desc, impl: rawptr) -> bool {
+	// Handler threads read the registry without locking once serving.
+	if s.listening {
+		return false
+	}
+	for name in s.services {
+		if name == desc.name {
+			return false
+		}
+	}
+	for m, i in desc.methods {
+		path := strings.concatenate({"/", desc.name, "/", m.name}, context.temp_allocator)
+		if path in s.methods {
+			return false
+		}
+		for other in desc.methods[:i] {
+			if other.name == m.name {
+				return false
+			}
+		}
+	}
+	append(&s.services, strings.clone(desc.name, s.allocator))
 	for m in desc.methods {
 		path := strings.concatenate({"/", desc.name, "/", m.name}, s.allocator)
 		if path in s.methods {
@@ -155,6 +180,12 @@ server_register :: proc(s: ^Server, desc: ^Service_Desc, impl: rawptr) -> bool {
 		s.methods[path] = {impl, m.kind, m.handler}
 	}
 	return true
+}
+
+// server_services returns the fully qualified names of the registered
+// services (valid until server_destroy).
+server_services :: proc(s: ^Server) -> []string {
+	return s.services[:]
 }
 
 // server_start listens on `address` ("host:port"; port 0 picks a free
@@ -313,6 +344,10 @@ server_destroy :: proc(s: ^Server) {
 		delete(path, s.allocator)
 	}
 	delete(s.methods)
+	for name in s.services {
+		delete(name, s.allocator)
+	}
+	delete(s.services)
 	delete(s.conns)
 	for s.free_calls != nil {
 		call := s.free_calls

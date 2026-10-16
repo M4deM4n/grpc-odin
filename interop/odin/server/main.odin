@@ -13,6 +13,7 @@ import "core:os"
 import "core:time"
 
 import "grpc:grpc"
+import "grpc:reflection"
 import gen "../gen"
 
 unary :: proc(srv: ^gen.Tester_Server, call: ^grpc.Server_Call, req: ^gen.Echo, resp: ^gen.Echo) -> grpc.Status {
@@ -109,6 +110,12 @@ main :: proc() {
 	server: grpc.Server
 	grpc.server_init(&server)
 	gen.Tester_register(&server, &impl)
+	// Server reflection (v1 and v1alpha) from the embedded descriptors.
+	refl: reflection.Server
+	if !reflection.server_register(&refl, &server, gen.FILE_DESCRIPTORS[:]) {
+		fmt.eprintln("failed to register server reflection")
+		os.exit(1)
+	}
 	ep, ok := grpc.server_start(&server, address)
 	if !ok {
 		fmt.eprintfln("failed to listen on %s", address)
@@ -131,5 +138,6 @@ main :: proc() {
 		}
 	}
 	grpc.server_shutdown(&server, 2 * time.Second)
+	reflection.server_destroy(&refl)
 	grpc.server_destroy(&server)
 }

@@ -118,6 +118,13 @@ Field :: struct {
 	deprecated:    bool,
 	// proto2 `[default = ...]`, validated during resolution.
 	default_value: Maybe(Constant),
+	// `[json_name = "..."]`, if given.
+	json_name:     Maybe(string),
+	// All `[...]` options as written (for descriptors).
+	options:       [dynamic]Option,
+	// Extension fields (declared in `extend X { ... }`): the extended type.
+	is_extension:  bool,
+	extendee:      Type_Ref,
 	pos:        Pos,
 	file:       ^File,
 	// Set during generation.
@@ -127,6 +134,7 @@ Field :: struct {
 Oneof :: struct {
 	name:           string,
 	fields:         [dynamic]^Field,
+	options:        [dynamic]Option,
 	pos:            Pos,
 	odin_name:      string, // struct field name
 	odin_type_name: string, // union type name
@@ -147,14 +155,28 @@ Message :: struct {
 	enums:           [dynamic]^Enum,
 	reserved_ranges: [dynamic]Range,
 	reserved_names:  [dynamic]string,
+	// Extension ranges (`extensions 100 to 199;`), kept for descriptors.
+	extension_ranges: [dynamic]Range,
+	// Extensions declared inside this message (`extend X { ... }`).
+	extensions:      [dynamic]^Field,
+	options:         [dynamic]Option,
+	// Nested messages and map fields in source order: the descriptor's
+	// nested types interleave synthesized map entries in this order.
+	nested_order:    [dynamic]Nested_Item,
 	pos:             Pos,
 	odin_name:       string,
 }
 
+Nested_Item :: union {
+	^Message,
+	^Field, // a map field
+}
+
 Enum_Value :: struct {
-	name:   string,
-	number: i32,
-	pos:    Pos,
+	name:    string,
+	number:  i32,
+	options: [dynamic]Option,
+	pos:     Pos,
 }
 
 Enum :: struct {
@@ -166,6 +188,7 @@ Enum :: struct {
 	allow_alias:     bool,
 	reserved_ranges: [dynamic]Range,
 	reserved_names:  [dynamic]string,
+	options:         [dynamic]Option,
 	pos:             Pos,
 	odin_name:       string,
 }
@@ -176,6 +199,10 @@ Method :: struct {
 	output:           Type_Ref,
 	client_streaming: bool,
 	server_streaming: bool,
+	options:          [dynamic]Option,
+	// Declared with a `{ ... }` body (protoc then records options, even
+	// empty ones).
+	has_body:         bool,
 	pos:              Pos,
 }
 
@@ -184,6 +211,7 @@ Service :: struct {
 	full_name: string,
 	file:      ^File,
 	methods:   [dynamic]^Method,
+	options:   [dynamic]Option,
 	pos:       Pos,
 	odin_name: string,
 }
@@ -204,4 +232,12 @@ File :: struct {
 	messages:     [dynamic]^Message,
 	enums:        [dynamic]^Enum,
 	services:     [dynamic]^Service,
+	options:      [dynamic]Option,
+	// Top-level extensions (`extend X { ... }`). They appear in descriptors
+	// (e.g. custom option declarations); no code is generated for them.
+	extensions:   [dynamic]^Field,
+	// Record json_name on every field in the descriptor (Google's
+	// well-known-type descriptors do; ordinary protoc output only records
+	// explicit ones).
+	all_json_names: bool,
 }

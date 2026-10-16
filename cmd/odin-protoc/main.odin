@@ -28,6 +28,8 @@ options:
   --grpc-import=<path>           import path of the grpc runtime
                                  (default: "grpc:grpc")
   --no-services                  do not generate gRPC client/server code
+  --no-descriptors               do not embed file descriptors (which server
+                                 reflection needs)
   -h, --help                     show this help
 `
 
@@ -52,6 +54,7 @@ Args :: struct {
 	protobuf_import: string,
 	grpc_import:     string,
 	no_services:     bool,
+	no_descriptors:  bool,
 }
 
 run :: proc(argv: []string, allocator: protoc.Allocator) -> int {
@@ -90,6 +93,7 @@ run :: proc(argv: []string, allocator: protoc.Allocator) -> int {
 		protobuf_import   = args.protobuf_import,
 		grpc_import       = args.grpc_import,
 		generate_services = !args.no_services,
+		no_descriptors    = args.no_descriptors,
 	}
 	files, gen_ok := protoc.generate(&c, opts)
 	if !gen_ok {
@@ -149,6 +153,8 @@ parse_args :: proc(argv: []string) -> (args: Args, ok: bool) {
 			args.grpc_import = value_of(argv, &i, name) or_return
 		case "--no-services":
 			args.no_services = true
+		case "--no-descriptors":
+			args.no_descriptors = true
 		case:
 			if strings.has_prefix(arg, "-I") && len(arg) > 2 {
 				append(&args.includes, arg[2:])
