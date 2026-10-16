@@ -732,6 +732,14 @@ client_finish :: proc(cs: ^Client_Stream) -> Status {
 	return st
 }
 
+// client_set_deadline changes the local deadline for subsequent
+// operations on the stream (send, recv, finish); {} removes it. The
+// grpc-timeout sent to the server when the stream opened is unchanged.
+// Useful for long-lived streams that bound each request/response exchange.
+client_set_deadline :: proc(cs: ^Client_Stream, deadline: time.Time) {
+	cs.deadline = deadline
+}
+
 // client_cancel aborts the RPC (RST_STREAM CANCEL).
 client_cancel :: proc(cs: ^Client_Stream) {
 	stream_send_reset(&cs.stream, .Cancel)

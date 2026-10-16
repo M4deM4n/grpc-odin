@@ -118,15 +118,6 @@ message Keywords {
   bool context = 3;
   repeated string string = 4;
   int32 len = 5;
-  int32 proc_ = 6;  // collides with the escaped name of `proc`
-  KeywordEnum kind = 7;
-}
-
-// Enum value names that are Odin keywords.
-enum KeywordEnum {
-  in = 0;
-  proc = 1;
-  proc_ = 2;
 }
 
 message WithWellKnown {

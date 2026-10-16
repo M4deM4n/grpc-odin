@@ -17,6 +17,7 @@ directions.
 | `grpc/` | gRPC client (`Channel`) and server: unary and all streaming kinds, metadata, deadlines, cancellation, status codes, flow control, graceful shutdown |
 | `protobuf/` | Protobuf wire-format runtime used by generated code |
 | `protoc/`, `cmd/odin-protoc/` | `.proto` (proto2/proto3) compiler generating Odin messages and gRPC stubs |
+| `reflection/` | Client for the gRPC Server Reflection protocol (v1, with v1alpha fallback) |
 | `http2/` | HTTP/2 framing (RFC 9113) |
 | `hpack/` | HPACK header compression (RFC 7541) |
 
@@ -77,6 +78,33 @@ for {
 }
 pb.Greeter_SayHelloAll_Client_finish(stream)
 ```
+
+### Server reflection (client side)
+
+Discover the services of any server that has reflection enabled, without
+its `.proto` files (see `examples/reflection`, a `grpcurl list/describe`
+look-alike):
+
+```odin
+rc: reflection.Client
+reflection.client_init(&rc, ch, {timeout = 10 * time.Second})
+defer reflection.client_destroy(&rc)   // frees every result below
+
+services, _ := reflection.list_services(&rc)
+for name in services {
+	info, _ := reflection.describe_service(&rc, name)
+	for m in info.methods {
+		fmt.println(m.path, m.input_type, "->", m.output_type, m.client_streaming, m.server_streaming)
+	}
+}
+msg, file, _ := reflection.describe_message(&rc, "helloworld.HelloRequest")  // fields, nested types
+```
+
+The client tries `grpc.reflection.v1` and falls back to `v1alpha` (which
+many servers, e.g. grpcio, still serve). Raw descriptors are available via
+`file_containing_symbol` / `file_by_filename`, decoded with a wire-compatible
+subset of `descriptor.proto` (unknown parts are preserved). Serving
+reflection from an Odin server is not implemented.
 
 ## Generated code
 
@@ -139,9 +167,10 @@ Well-known types `empty`, `timestamp`, `duration`, `wrappers`, `any`,
 - Graceful shutdown sends one GOAWAY with the last processed stream;
   streams the client opened concurrently are refused (REFUSED_STREAM),
   which clients retry transparently.
-- Not supported: protobuf editions, extensions, groups, JSON mapping, gRPC
-  reflection/health services, client-side load balancing, retries beyond
-  transparent retry of streams the server refused.
+- Not supported: protobuf editions, extensions, groups, JSON mapping,
+  serving reflection or health checking from an Odin server, client-side
+  load balancing, retries beyond transparent retry of streams the server
+  refused.
 
 ## Development
 

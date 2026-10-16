@@ -33,6 +33,7 @@ project-specific skills in `.claude/skills/` hold the detailed checklists.
 | `protobuf/` | `protobuf` | Wire-format runtime used by generated code |
 | `protoc/` | `protoc` | `.proto` lexer/parser/resolver and Odin code generator |
 | `grpc/` | `grpc` | gRPC client and server over HTTP/2 |
+| `reflection/` | `reflection` | Server-reflection client; its `*.pb.odin` are generated from `reflection/proto` by `scripts/test.sh` and committed |
 | `cmd/odin-protoc/` | | CLI for `protoc` |
 | `tools/gen_hpack_tables/` | | Regenerates `hpack/tables_generated.odin` from RFC 7541 |
 | `tests/<suite>/` | `<suite>_test` | One test package per library package |

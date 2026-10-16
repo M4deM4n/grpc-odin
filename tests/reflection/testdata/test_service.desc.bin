@@ -1,0 +1,17 @@
+
+test_service.prototest.svc"”
+Echo
+text (	
+seq (
+payload (
+sleep_ms (
+	fail_code (
+fail_message (	
+count (
+response_bytes (2ó
+Tester'
+Unary.test.svc.Echo.test.svc.Echo0
+ServerStream.test.svc.Echo.test.svc.Echo00
+ClientStream.test.svc.Echo.test.svc.Echo(*
+Bidi.test.svc.Echo.test.svc.Echo(00
+NotImplemented.test.svc.Echo.test.svc.Echobproto3

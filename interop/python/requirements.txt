@@ -1,3 +1,4 @@
 grpcio==1.66.2
 grpcio-tools==1.66.2
 protobuf>=5.27,<6
+grpcio-reflection==1.66.2

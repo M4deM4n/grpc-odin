@@ -746,7 +746,10 @@ run_call :: proc(call: ^Server_Call) {
 		finish_call(call, call.early_status)
 	case:
 		st := call.method.handler(call.method.impl, call)
-		if deadline_passed(call.deadline) && st.code == .OK {
+		// Once the deadline has passed the RPC failed with DEADLINE_EXCEEDED,
+		// whatever the handler reports (it typically bails out with
+		// CANCELLED after call_is_cancelled turned true).
+		if deadline_passed(call.deadline) {
 			st = {.Deadline_Exceeded, "deadline exceeded"}
 		}
 		finish_call(call, st)

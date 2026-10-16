@@ -1,0 +1,19 @@
+// Odin naming edge cases. Google's protoc rejects these (JSON name and enum
+// value prefix conflicts, which only matter for the JSON mapping), so this
+// file is compiled by odin-protoc only and never used for reference fixtures.
+syntax = "proto3";
+
+package test.all;
+
+message OdinNames {
+  int32 proc = 1;
+  int32 proc_ = 2;  // collides with the escaped name of `proc`
+  KeywordEnum kind = 3;
+}
+
+// Enum value names that are Odin keywords.
+enum KeywordEnum {
+  in = 0;
+  proc = 1;
+  proc_ = 2;
+}

@@ -92,6 +92,11 @@ def serve(port):
 
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=32))
         pb_grpc.add_TesterServicer_to_server(make_servicer(pb, pb_grpc), server)
+        # Server reflection (grpcio-reflection serves the v1alpha protocol).
+        from grpc_reflection.v1alpha import reflection
+
+        names = (pb.DESCRIPTOR.services_by_name["Tester"].full_name, reflection.SERVICE_NAME)
+        reflection.enable_server_reflection(names, server)
         bound = server.add_insecure_port(f"127.0.0.1:{port}")
         server.start()
         print(f"listening 127.0.0.1:{bound}", flush=True)

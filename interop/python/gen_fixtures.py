@@ -114,6 +114,19 @@ def main():
                 f.write(msg.SerializeToString(deterministic=True))
             print(f"wrote {os.path.relpath(path, ROOT)} ({msg.ByteSize()} bytes)")
 
+        # A FileDescriptorProto as servers return it over reflection, for the
+        # reflection package's descriptor subset (tests/reflection).
+        grpc_proto = os.path.join(ROOT, "tests", "grpc", "proto")
+        if protoc.main(["protoc", f"-I{grpc_proto}", f"--python_out={tmp}", "test_service.proto"]) != 0:
+            sys.exit("protoc failed for test_service.proto")
+        svc = importlib.import_module("test_service_pb2")
+        refl_dir = os.path.join(ROOT, "tests", "reflection", "testdata")
+        os.makedirs(refl_dir, exist_ok=True)
+        path = os.path.join(refl_dir, "test_service.desc.bin")
+        with open(path, "wb") as f:
+            f.write(svc.DESCRIPTOR.serialized_pb)
+        print(f"wrote {os.path.relpath(path, ROOT)} ({len(svc.DESCRIPTOR.serialized_pb)} bytes)")
+
 
 if __name__ == "__main__":
     main()

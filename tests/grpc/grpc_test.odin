@@ -574,6 +574,33 @@ test_deadline_exceeded :: proc(t: ^testing.T) {
 	testing.expect_value(t, st.code, grpc.Status_Code.Deadline_Exceeded)
 }
 
+// Once the server-side deadline passes, the server reports DEADLINE_EXCEEDED
+// even if the handler bails out with another code (here CANCELLED, after
+// call_is_cancelled turned true).
+@(test)
+test_server_reports_deadline_exceeded :: proc(t: ^testing.T) {
+	f: Fixture
+	if !testing.expect(t, start(&f)) {
+		return
+	}
+	defer stop(&f)
+	cs, st := grpc.client_new_stream(f.ch, &gen.Tester_Unary_METHOD, {timeout = 150 * time.Millisecond, allocator = context.temp_allocator})
+	if !expect_ok(t, st) {
+		return
+	}
+	defer grpc.client_destroy(cs)
+	req := gen.Echo {
+		sleep_ms = 2000,
+	}
+	expect_ok(t, grpc.client_send_last(cs, &req))
+	// Wait for the server's verdict instead of expiring locally first.
+	grpc.client_set_deadline(cs, {})
+	resp: gen.Echo
+	got, rst := grpc.client_recv(cs, &resp)
+	testing.expect(t, !got)
+	testing.expect_value(t, rst.code, grpc.Status_Code.Deadline_Exceeded)
+}
+
 @(test)
 test_client_cancel :: proc(t: ^testing.T) {
 	f: Fixture

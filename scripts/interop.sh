@@ -30,6 +30,7 @@ rm -rf interop/odin/gen
 "build/odin-protoc$EXE" -I tests/grpc/proto -o interop/odin/gen --package=interop_gen tests/grpc/proto/test_service.proto
 odin build interop/odin/server $COMMON -o:speed -out:"build/interop_server$EXE"
 odin build interop/odin/client $COMMON -o:speed -out:"build/interop_client$EXE"
+odin build examples/reflection $COMMON -out:"build/reflect$EXE"
 
 # wait_listening <log file>: prints the endpoint once the server is ready.
 wait_listening() {
@@ -66,6 +67,20 @@ echo "==> Odin client -> grpcio server"
 SERVER=$!
 TARGET=$(wait_listening "$LOG") || { stop_tree $SERVER; exit 1; }
 if ! "build/interop_client$EXE" "$TARGET"; then FAILED=1; fi
+
+echo "==> Odin reflection client -> grpcio reflection (v1alpha)"
+REFL=build/interop_reflection.txt
+if "build/reflect$EXE" "$TARGET" > "$REFL" 2>&1 &&
+	grep -q "rpc Bidi(stream test.svc.Echo) returns (stream test.svc.Echo)" "$REFL" &&
+	grep -q "rpc ServerStream(test.svc.Echo) returns (stream test.svc.Echo)" "$REFL" &&
+	grep -q "server reflection protocol: V1_Alpha" "$REFL" &&
+	"build/reflect$EXE" "$TARGET" test.svc.Echo 2>&1 | grep -q "int32 response_bytes = 8;"; then
+	echo "PASS reflection"
+else
+	echo "FAIL reflection"
+	cat "$REFL"
+	FAILED=1
+fi
 stop_tree $SERVER
 
 echo "==> grpcio client -> Odin server"
